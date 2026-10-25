@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+models/
+scratch/
+.backup_incident/
+*.wav
+*.voice-backup
+index(2).html
+data/*
+!data/artifacts/
+data/artifacts/*
+!data/artifacts/README.md

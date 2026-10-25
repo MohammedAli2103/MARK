@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#04070D">
+  <title>Mark — Holo Table (v3)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body data-state="idle">
+  <div id="live" class="sr" aria-live="polite"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <b>MARK<i>.</i></b>
+      <span>AUTONOMOUS NEURAL INTERFACE</span>
+    </div>
+    <div class="wake">WAKE WORD · <strong>“HEY MARK”</strong></div>
+    <div class="pill" id="conn"><i></i><span id="connTxt">CONNECTING</span></div>
+    <div class="hdr-right">
+      <button class="toggle" id="hf" type="button" aria-pressed="true" title="Toggle Hands-Free Wake Word Mode">
+        <span class="sw"></span>HANDS-FREE
+      </button>
+      <button class="ghost" id="clear" type="button" title="Clear conversation history">CLEAR LOG</button>
+    </div>
+  </header>
+
+  <!-- 3-Column Main Stage -->
+  <main>
+    <!-- Left Column: User Input & Conversation History -->
+    <section class="col col-you" aria-label="You">
+      <div class="col-header">
+        <span class="tag" id="youTag">YOU</span>
+        <span class="meta" id="youCount">0 TURNS</span>
+      </div>
+
+      <!-- Scrollable User Turns Feed -->
+      <div class="conversation-stream" id="youStream"></div>
+
+      <!-- Live Speech Capture Card (Shown during active voice recognition) -->
+      <div class="live-capture-card" id="liveCaptureCard" hidden>
+        <div class="card-header">
+          <span class="status-dot pulsing cyan"></span>
+          <span class="card-title" id="captureTitle">LISTENING</span>
+        </div>
+        <p class="you-text live-text" id="liveTranscript">
+          <span class="tent" id="liveTent"></span><span class="caret"></span>
+        </p>
+        <div class="row capture-actions">
+          <button class="btn primary btn-sm" id="stopListen" type="button">■ Stop listening</button>
+          <button class="btn btn-sm" id="cancelListen" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Center Stage: Holographic Core -->
+    <section class="stage" aria-label="Mark core">
+      <svg id="holo" viewBox="0 0 1000 700" role="img" aria-label="Mark's holographic core" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="fg" gradientUnits="userSpaceOnUse" x1="0" y1="330" x2="0" y2="700">
+            <stop offset="0" style="stop-color:var(--accent)" stop-opacity="0"/>
+            <stop offset="1" style="stop-color:var(--accent)" stop-opacity=".42"/>
+          </linearGradient>
+          <linearGradient id="beamg" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" style="stop-color:var(--accent)" stop-opacity=".4"/>
+            <stop offset="1" style="stop-color:var(--accent)" stop-opacity="0"/>
+          </linearGradient>
+          <radialGradient id="aura">
+            <stop offset=".5" style="stop-color:var(--accent)" stop-opacity=".14"/>
+            <stop offset="1" style="stop-color:var(--accent)" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="sph" cx="40%" cy="35%" r="70%">
+            <stop offset="0" style="stop-color:var(--accent)" stop-opacity=".3"/>
+            <stop offset="1" style="stop-color:var(--accent)" stop-opacity=".02"/>
+          </radialGradient>
+          <radialGradient id="halo">
+            <stop offset=".2" style="stop-color:var(--accent)" stop-opacity=".6"/>
+            <stop offset="1" style="stop-color:var(--accent)" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="pad">
+            <stop offset="0" style="stop-color:var(--accent)" stop-opacity=".4"/>
+            <stop offset="1" style="stop-color:var(--accent)" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="hz" x1="0" x2="1">
+            <stop offset="0" style="stop-color:var(--accent)" stop-opacity="0"/>
+            <stop offset=".5" style="stop-color:var(--accent)" stop-opacity=".7"/>
+            <stop offset="1" style="stop-color:var(--accent)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Ambient aura glow -->
+        <circle cx="500" cy="250" r="330" fill="url(#aura)"/>
+
+        <!-- Perspective ground grid -->
+        <g id="floor"></g>
+        <rect x="0" y="328" width="1000" height="3" fill="url(#hz)"/>
+
+        <!-- Hologram projection pad -->
+        <ellipse cx="500" cy="520" rx="340" ry="82" fill="url(#pad)"/>
+        <path id="beam" d="M390 520H610L560 400H440Z" fill="url(#beamg)"/>
+        <g id="parts"></g>
+        <g id="padrings"></g>
+        <path id="bars" d=""/>
+
+        <!-- Central Holographic Core Sphere -->
+        <g id="sphere">
+          <g id="lat"></g>
+          <g id="meridians"></g>
+          <circle class="ring" cx="500" cy="250" r="140" stroke-width="2" stroke-opacity=".95"/>
+          <circle class="ring" cx="500" cy="250" r="150" stroke-opacity=".3" stroke-dasharray="1 7"/>
+          <circle cx="500" cy="250" r="140" fill="url(#sph)"/>
+          <g id="mesh"></g>
+          <circle cx="500" cy="250" r="56" fill="url(#halo)"/>
+          <circle cx="500" cy="250" r="18" fill="#EAFBFF"/>
+          <!-- Central Mark Monogram Glyph -->
+          <path d="M493 257V243L500 250L507 243V257" fill="none" stroke="#04121C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path id="spikes" d=""/>
+          <ellipse class="ring" cx="500" cy="250" rx="210" ry="44" transform="rotate(-24 500 250)" stroke-opacity=".4" stroke-dasharray="2 6"/>
+          <ellipse class="ring" cx="500" cy="250" rx="196" ry="38" transform="rotate(20 500 250)" stroke-opacity=".4"/>
+        </g>
+
+        <!-- Mode-Specific Hologram Overlays -->
+        <g id="think"></g>
+        <g id="prog"></g>
+        <path class="ring" d="M200 520A300 70 0 0 0 800 520" stroke-opacity=".8" stroke-width="2"/>
+        <g id="nodes"></g>
+      </svg>
+
+      <!-- Status Readout -->
+      <div class="status">
+        <b id="label">STANDBY</b>
+        <span id="sub">Waiting for “Hey Mark”</span>
+      </div>
+
+      <!-- Live Voice Pipeline Telemetry -->
+      <ol class="pipe" aria-label="Voice pipeline">
+        <li data-stage="stt" id="pipeStt"><small>Voice input</small><b id="pipeSttText">Whisper small</b><em>● ACTIVE</em></li>
+        <li data-stage="llm" id="pipeLlm"><small>AI engine · local</small><b id="pipeLlmText">Qwen 3.5 4B</b><em>● ACTIVE</em></li>
+        <li data-stage="tts" id="pipeTts"><small>Voice synthesis · neural</small><b id="pipeTtsText">Kokoro 82M</b><em>● ACTIVE</em></li>
+      </ol>
+    </section>
+
+    <!-- Right Column: Mark Response History & Real-Time Status -->
+    <section class="col col-mark" aria-label="Mark">
+      <div class="col-header">
+        <span class="tag" id="markTag">MARK</span>
+        <span class="meta" id="markMeta">LOCAL CORE</span>
+      </div>
+
+      <!-- Scrollable Assistant Responses Feed -->
+      <div class="conversation-stream" id="markStream"></div>
+
+      <!-- Live Reasoning Card (Shown while LLM is generating) -->
+      <div class="live-card thinking-card" id="liveThinkingCard" hidden>
+        <div class="card-header">
+          <span class="status-dot pulsing cyan"></span>
+          <span>MARK IS REASONING</span>
+        </div>
+        <div class="mark-text dots">···</div>
+        <div class="row">
+          <button class="btn amber btn-sm" id="stopThink" type="button">■ Stop</button>
+        </div>
+      </div>
+
+      <!-- Live Speaking Card (Shown while Kokoro audio is playing) -->
+      <div class="live-card speaking-card" id="liveSpeakingCard" hidden>
+        <div class="card-header">
+          <span class="status-dot pulsing gold"></span>
+          <span id="speakingStatusText">VOICE SYNTHESIS ACTIVE</span>
+        </div>
+        <div class="row">
+          <button class="btn amber btn-sm" id="interrupt" type="button">■ Interrupt (Space)</button>
+        </div>
+      </div>
+
+      <!-- Live Offline Card (Shown if backend server disconnects) -->
+      <div class="live-card offline-card" id="liveOfflineCard" hidden>
+        <div class="card-header">
+          <span class="status-dot red"></span>
+          <span id="offlineTitle">BACKEND DISCONNECTED</span>
+        </div>
+        <p class="card-desc" id="offlineDesc">Unable to connect to the Mark backend service on 127.0.0.1:8765.</p>
+        <div class="row">
+          <button class="btn primary btn-sm" id="reconnect" type="button">Reconnect</button>
+        </div>
+      </div>
+
+      <!-- Task Timeline -->
+      <ol class="task" id="task" hidden></ol>
+
+      <!-- Permission Authorization Dialogue -->
+      <div id="perm" hidden>
+        <div class="meta" id="permInfo">Authorization required</div>
+        <div class="row">
+          <button class="btn warn" id="permAllowOnce" type="button">Allow once</button>
+          <button class="btn plain" id="permAllowTask" type="button">Allow for this task</button>
+          <button class="btn plain" id="permDeny" type="button">Deny</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer / Command Input -->
+  <footer>
+    <form id="form" autocomplete="off">
+      <textarea id="msg" rows="1" aria-label="Message Mark" placeholder="Say “Hey Mark”, or type here…"></textarea>
+      <button type="button" id="mic" aria-label="Start listening" title="Start listening (Voice input)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="12" rx="3"/>
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>
+        </svg>
+      </button>
+    </form>
+    <p class="hints">Enter send · Shift+Enter new line · Space interrupt · Esc cancel · / focus input</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
