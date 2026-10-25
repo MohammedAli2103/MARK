@@ -1316,3 +1316,30 @@ body[data-state="permission"] .mer {
   color: var(--cyan);
 }
 
+.artifact-card.clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.artifact-card.clickable:hover {
+  border-color: var(--cyan);
+  background: rgba(14, 30, 52, 0.95);
+  box-shadow: 0 4px 20px rgba(0, 229, 255, 0.15);
+}
+
+.artifact-card.clickable:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.artifact-download-error {
+  font: 500 11px var(--mono);
+  color: var(--red);
+  background: rgba(240, 97, 109, 0.15);
+  border: 1px solid rgba(240, 97, 109, 0.4);
+  padding: 4px 8px;
+  border-radius: 2px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+

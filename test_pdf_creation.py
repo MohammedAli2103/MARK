@@ -545,7 +545,9 @@ class TestPDFCreation(unittest.TestCase):
             self.assertEqual(resp.status, 200)
             self.assertEqual(resp.headers.get("Content-Type"), "application/pdf")
             self.assertIn("attachment", resp.headers.get("Content-Disposition"))
+            self.assertIn('filename="Test Doc.pdf"', resp.headers.get("Content-Disposition"))
             self.assertEqual(resp.headers.get("X-Content-Type-Options"), "nosniff")
+            self.assertEqual(resp.headers.get("Content-Length"), str(len(dummy_pdf)))
             content = resp.read()
             self.assertEqual(content, dummy_pdf)
 
@@ -824,6 +826,34 @@ class TestPDFCreation(unittest.TestCase):
         self.assertIn("2. Analysis", toc_text)
         # Verify page number dot leaders exist in single line TOC
         self.assertIn(".", toc_text)
+
+    # 26. Broadened PDF Intent Detector (Positives and Negatives)
+    def test_26_broadened_detector_phrases(self):
+        positive_phrases = [
+            "make a pdf with tables 1 to 5",
+            "create pdf of multiplication tables 1 through 5",
+            "give me tables 1-5 in pdf",
+            "pdf with tables numbered 1 through 5",
+            "Create a PDF containing multiplication tables for 1 through 5",
+            "save this as a pdf",
+            "turn that into a pdf",
+            "export our conversation as pdf",
+            "I need a pdf report on solar energy",
+            "can you make me a resume in pdf",
+        ]
+        for phrase in positive_phrases:
+            intent, params = detect_pdf_intent(phrase)
+            self.assertIn(intent, ("create", "revise"), f"Expected positive intent for phrase: '{phrase}', got '{intent}'")
+
+        negative_phrases = [
+            "What is a PDF?",
+            "explain what PDF means",
+            "how do I open a pdf file",
+            "is a pdf editable",
+        ]
+        for phrase in negative_phrases:
+            intent, params = detect_pdf_intent(phrase)
+            self.assertIsNone(intent, f"Expected no intent for question phrase: '{phrase}', got '{intent}'")
 
 
 if __name__ == "__main__":

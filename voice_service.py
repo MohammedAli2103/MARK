@@ -288,6 +288,7 @@ class VoiceService:
         self.turn_id = 0
         self.last_transcript = ""
         self.last_reply = ""
+        self.last_artifact = None
         self.partial_reply = ""
         self.current_spoken_sentence = ""
 
@@ -542,6 +543,7 @@ class VoiceService:
             "turn_status": turn_status,
             "last_transcript": self.last_transcript,
             "last_reply": self.last_reply,
+            "last_artifact": getattr(self, "last_artifact", None),
             "partial_reply": getattr(self, "partial_reply", self.last_reply),
             "current_spoken_sentence": getattr(self, "current_spoken_sentence", ""),
             "metrics": turn_metrics,
@@ -1005,6 +1007,7 @@ class VoiceService:
         self.last_transcript = turn.transcript
         self.turn_id = turn.turn_id
         self.last_reply = ""
+        self.last_artifact = None
         self.partial_reply = ""
         self.current_spoken_sentence = ""
 

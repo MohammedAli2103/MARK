@@ -41,7 +41,7 @@ from backend.pdf.generator import (
     revise_pdf_from_prompt,
     GenerationBusyError,
 )
-from backend.pdf.storage import storage, UUID4_PATTERN
+from backend.pdf.storage import storage, UUID4_PATTERN, sanitize_download_filename
 from backend.pdf.tools import list_pdfs, get_pdf_info
 
 def _is_request_authorized(handler: BaseHTTPRequestHandler) -> bool:
@@ -107,7 +107,8 @@ SYSTEM_PROMPT = (
     "Always begin your response with a concise 2-5 word conversational acknowledgment or opening phrase (e.g., 'Right away, sir.', 'Certainly, sir.', 'On it, sir.') followed immediately by the answer, so spoken playback can begin instantly. "
     "Never ramble or use conversational filler beyond this brief opening. "
     "For programming questions, provide a concise explanation before code blocks. "
-    "Never claim to have performed computer actions unless a tool actually performed them."
+    "Never claim to have performed computer actions unless a tool actually performed them. "
+    "You can create PDF documents for the user. Never say you cannot create or save files, and never suggest fpdf or Python code to make a PDF. If the user wants a PDF, tell them to ask for it directly, for example: 'Create a PDF of ...'."
 )
 
 
@@ -239,9 +240,50 @@ def internal_chat(message: str, history: list = None, commit: bool = False, stre
     return answer
 
 
+def voice_chat_handler(message: str, stream_callback=None) -> str:
+    """
+    Routes voice command requests through the deterministic PDF detector.
+    If a PDF request is detected, generates the document, sets voice_service.last_artifact,
+    and returns a short confirmation spoken response rather than reading content aloud.
+    """
+    pdf_intent, intent_params = detect_pdf_intent(message)
+    if pdf_intent in ("create", "revise"):
+        try:
+            ctx = ""
+            with _conversation_lock:
+                for item in _conversation_history[-6:]:
+                    if isinstance(item, dict):
+                        ctx += f"{item.get('role', 'user')}: {item.get('content', '')}\n"
+
+            if pdf_intent == "create":
+                record, summary = generate_pdf_from_prompt(
+                    message,
+                    conversation_context=ctx if ctx else None,
+                )
+            else:
+                record, summary = revise_pdf_from_prompt(
+                    message,
+                    conversation_context=ctx if ctx else None,
+                )
+
+            commit_conversation_turn(message, summary)
+            voice_service.last_artifact = record.to_dict()
+            short_reply = f"Right away, sir. Your PDF document '{record.display_name}' is ready in the chat."
+            if stream_callback:
+                stream_callback(short_reply)
+            return short_reply
+        except Exception as exc:
+            err_msg = f"I apologize, sir. I was unable to generate the PDF: {exc}"
+            if stream_callback:
+                stream_callback(err_msg)
+            return err_msg
+
+    return internal_chat(message, stream_callback=stream_callback)
+
+
 voice_service = VoiceService(
     transcribe_fn=internal_transcribe,
-    chat_fn=internal_chat,
+    chat_fn=voice_chat_handler,
     commit_history_fn=commit_conversation_turn,
     microphone_device=None,
     sample_rate=16000,
@@ -325,7 +367,8 @@ class MarkHandler(BaseHTTPRequestHandler):
 
             is_preview = "preview=1" in self.path
             disposition_type = "inline" if is_preview else "attachment"
-            disp_header = f'{disposition_type}; filename="{rec.display_name}"'
+            clean_name = sanitize_download_filename(rec.display_name)
+            disp_header = f'{disposition_type}; filename="{clean_name}"'
 
             self.send_response(200)
             self.send_header("Content-Type", "application/pdf")
@@ -529,7 +572,7 @@ class MarkHandler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream; charset=utf-8")
                     self.send_header("Cache-Control", "no-cache")
-                    self.send_header("Connection", "keep-alive")
+                    self.send_header("Connection", "close")
                     self.end_headers()
 
                     def send_sse(data_obj):
@@ -559,6 +602,7 @@ class MarkHandler(BaseHTTPRequestHandler):
                         else:
                             record, summary = revise_pdf_from_prompt(
                                 message,
+                                conversation_context=ctx if ctx else None,
                                 progress_callback=on_prog,
                             )
 
@@ -606,7 +650,10 @@ class MarkHandler(BaseHTTPRequestHandler):
                             conversation_context=ctx if ctx else None,
                         )
                     else:
-                        record, summary = revise_pdf_from_prompt(message)
+                        record, summary = revise_pdf_from_prompt(
+                            message,
+                            conversation_context=ctx if ctx else None,
+                        )
 
                     commit_conversation_turn(message, summary)
                     self.respond(200, {
@@ -623,7 +670,7 @@ class MarkHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream; charset=utf-8")
                 self.send_header("Cache-Control", "no-cache")
-                self.send_header("Connection", "keep-alive")
+                self.send_header("Connection", "close")
                 self.end_headers()
 
                 def on_chunk(content_piece):

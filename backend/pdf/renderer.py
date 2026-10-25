@@ -226,6 +226,7 @@ class NumberedCanvas(canvas.Canvas):
         self.page_limit = MAX_PAGES
         self.margin_left = 45.0
         self.margin_right = 45.0
+        self.is_resume = False
 
     def showPage(self):
         self._saved_page_states.append(dict(self.__dict__))
@@ -251,6 +252,11 @@ class NumberedCanvas(canvas.Canvas):
 
         # Skip headers/footers on cover page (if cover is page 1)
         if self.has_cover_page and page_num == 1:
+            self.restoreState()
+            return
+
+        # Skip headers/footers on 1-page resumes
+        if self.is_resume and total_pages == 1:
             self.restoreState()
             return
 
@@ -750,6 +756,7 @@ def render_in_process(doc_model: DocumentModel, assets: Optional[Dict[str, Any]]
         c.page_limit = MAX_PAGES
         c.margin_left = margin_left
         c.margin_right = margin_right
+        c.is_resume = (doc_model.style.template == "resume")
         return c
 
     # Table of contents notification callback

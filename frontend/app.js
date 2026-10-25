@@ -155,6 +155,9 @@
                 fullReply = parsed.reply || fullReply;
                 artifactData = parsed.artifact;
                 onChunk('', fullReply, { type: 'artifact', artifact: parsed.artifact });
+              } else if (parsed.type === 'error') {
+                fullReply = parsed.reply || parsed.error || fullReply;
+                onChunk('', fullReply, { type: 'error', error: parsed.error });
               } else if (parsed.token) {
                 fullReply += parsed.token;
                 onChunk(parsed.token, fullReply);
@@ -648,8 +651,12 @@
     const card = document.createElement('div');
     card.className = 'artifact-card';
     card.dataset.artifactId = artifact.artifact_id || '';
+    const st = (artifact.status || 'ready').toLowerCase();
+    card.dataset.status = st;
 
-    // Top row: Type Badge + Sanitized Title (textContent: Rule 5)
+    const displayName = artifact.display_name || 'Document.pdf';
+
+    // Top row: Type Badge + Sanitized Title (textContent: Rule 5/7)
     const header = document.createElement('div');
     header.className = 'artifact-header';
 
@@ -659,24 +666,28 @@
 
     const titleEl = document.createElement('div');
     titleEl.className = 'artifact-title';
-    titleEl.textContent = artifact.display_name || 'Document.pdf';
+    titleEl.textContent = displayName;
 
     header.append(badge, titleEl);
 
-    // Meta row: version, pages, size, status (textContent: Rule 5)
+    // Meta row: version, pages, size, status (textContent: Rule 5/7)
     const meta = document.createElement('div');
     meta.className = 'artifact-meta';
 
-    const versionTag = document.createElement('span');
-    versionTag.className = 'artifact-tag';
-    versionTag.textContent = `v${artifact.version || 1}`;
+    if (artifact.version) {
+      const versionTag = document.createElement('span');
+      versionTag.className = 'artifact-tag';
+      versionTag.textContent = `v${artifact.version}`;
+      meta.append(versionTag);
+    }
 
-    const pages = artifact.page_count || 1;
-    const pagesTag = document.createElement('span');
-    pagesTag.className = 'artifact-tag';
-    pagesTag.textContent = `${pages} PAGE${pages === 1 ? '' : 'S'}`;
-
-    meta.append(versionTag, pagesTag);
+    if (artifact.page_count) {
+      const pages = artifact.page_count;
+      const pagesTag = document.createElement('span');
+      pagesTag.className = 'artifact-tag';
+      pagesTag.textContent = `${pages} PAGE${pages === 1 ? '' : 'S'}`;
+      meta.append(pagesTag);
+    }
 
     if (artifact.size_bytes) {
       const sizeTag = document.createElement('span');
@@ -685,33 +696,78 @@
       meta.append(sizeTag);
     }
 
-    const st = (artifact.status || 'ready').toLowerCase();
     const statusTag = document.createElement('span');
     statusTag.className = `artifact-status status-${st}`;
     statusTag.textContent = st.toUpperCase();
     meta.append(statusTag);
 
-    // Actions
+    // Actions & content
     const actions = document.createElement('div');
     actions.className = 'artifact-actions';
 
-    if (st === 'ready') {
-      const dlLink = document.createElement('a');
-      dlLink.className = 'btn primary btn-sm artifact-btn';
-      dlLink.href = `/api/artifacts/${encodeURIComponent(artifact.artifact_id)}?download=1`;
-      dlLink.setAttribute('download', artifact.display_name || 'document.pdf');
-      dlLink.textContent = '⬇ Download';
-      dlLink.setAttribute('aria-label', `Download ${artifact.display_name}`);
+    const errorBanner = document.createElement('div');
+    errorBanner.className = 'artifact-download-error';
+    errorBanner.textContent = 'Download failed, retry';
+    errorBanner.hidden = true;
 
+    if (st === 'ready' && artifact.artifact_id) {
+      card.classList.add('clickable');
+      card.setAttribute('role', 'link');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-label', `Download ${displayName}`);
+
+      const downloadUrl = `/api/artifacts/${encodeURIComponent(artifact.artifact_id)}?download=1`;
+      card.setAttribute('href', downloadUrl);
+
+      // Real same-origin anchor for standard browser download behavior
+      const dlLink = document.createElement('a');
+      dlLink.className = 'btn primary btn-sm artifact-btn artifact-download-btn';
+      dlLink.href = downloadUrl;
+      dlLink.setAttribute('download', displayName);
+      dlLink.textContent = '⬇ Download';
+      dlLink.setAttribute('aria-label', `Download ${displayName}`);
+
+      // Secondary Preview button opening ?preview=1 inline
       const prevLink = document.createElement('a');
-      prevLink.className = 'btn plain btn-sm artifact-btn';
+      prevLink.className = 'btn plain btn-sm artifact-btn artifact-preview-btn';
       prevLink.href = `/api/artifacts/${encodeURIComponent(artifact.artifact_id)}?preview=1`;
       prevLink.target = '_blank';
       prevLink.rel = 'noopener noreferrer';
-      prevLink.textContent = '👁 Open';
-      prevLink.setAttribute('aria-label', `Open ${artifact.display_name} in new tab`);
+      prevLink.textContent = '👁 Preview';
+      prevLink.setAttribute('aria-label', `Preview ${displayName} in new tab`);
+
+      prevLink.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
 
       actions.append(dlLink, prevLink);
+
+      const triggerDownload = () => {
+        try {
+          dlLink.click();
+        } catch (err) {
+          errorBanner.hidden = false;
+        }
+      };
+
+      // Clicking anywhere on the card starts download
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.artifact-preview-btn')) return;
+        triggerDownload();
+      });
+
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('.artifact-preview-btn')) return;
+          e.preventDefault();
+          triggerDownload();
+        }
+      });
+
+      errorBanner.addEventListener('click', (e) => {
+        e.stopPropagation();
+        triggerDownload();
+      });
     } else if (st === 'failed') {
       const errEl = document.createElement('div');
       errEl.className = 'artifact-error';
@@ -724,7 +780,7 @@
       actions.append(progEl);
     }
 
-    card.append(header, meta, actions);
+    card.append(header, meta, actions, errorBanner);
     return card;
   }
 
@@ -798,10 +854,25 @@
           if (els.liveThinkingCard) els.liveThinkingCard.hidden = true;
           if (extra && extra.type === 'progress') {
             setState('thinking', extra.message);
+            if (!assistantTurnCard) {
+              assistantTurnCard = appendAssistantTurn(turnId, accumulated || 'Right away, sir. Generating document...', 'TEXT');
+            }
+            let card = assistantTurnCard.querySelector('.artifact-card');
+            if (!card) {
+              card = createArtifactCard({ status: 'generating', progress_message: extra.message, display_name: 'Document.pdf' });
+              assistantTurnCard.appendChild(card);
+            } else {
+              const progEl = card.querySelector('.artifact-progress');
+              if (progEl) progEl.textContent = extra.message;
+            }
           } else if (extra && extra.type === 'artifact' && assistantTurnCard) {
             const existingCard = assistantTurnCard.querySelector('.artifact-card');
             if (existingCard) existingCard.remove();
             assistantTurnCard.appendChild(createArtifactCard(extra.artifact));
+          } else if (extra && extra.type === 'error' && assistantTurnCard) {
+            const existingCard = assistantTurnCard.querySelector('.artifact-card');
+            if (existingCard) existingCard.remove();
+            assistantTurnCard.appendChild(createArtifactCard({ status: 'failed', error_message: extra.error || 'Generation failed.' }));
           }
           if (!assistantTurnCard) {
             assistantTurnCard = appendAssistantTurn(turnId, accumulated, 'TEXT');
@@ -834,7 +905,13 @@
       setState('idle', 'Local intelligence online');
     } catch (err) {
       if (err.name !== 'AbortError') {
-        appendAssistantTurn(turnId, `I encountered an error processing that: ${err.message}`, 'TEXT');
+        if (!assistantTurnCard) {
+          appendAssistantTurn(turnId, `I encountered an error processing that: ${err.message}`, 'TEXT');
+        } else {
+          const existingCard = assistantTurnCard.querySelector('.artifact-card');
+          if (existingCard) existingCard.remove();
+          assistantTurnCard.appendChild(createArtifactCard({ status: 'failed', error_message: err.message }));
+        }
         setState('error', err.message);
       }
     } finally {
@@ -911,7 +988,7 @@
         const streamReply = data.partial_reply || data.last_reply;
         if (streamReply) {
           if (els.liveThinkingCard) els.liveThinkingCard.hidden = true;
-          appendAssistantTurn(vTurnId, streamReply, 'VOICE');
+          appendAssistantTurn(vTurnId, streamReply, 'VOICE', data.last_artifact);
         }
 
         // 3. Spoken sentence highlighting
@@ -932,6 +1009,9 @@
           if (data.last_transcript && data.last_reply) {
             conversationHistory.push({ role: 'user', content: data.last_transcript });
             conversationHistory.push({ role: 'assistant', content: data.last_reply });
+          }
+          if (data.last_reply) {
+            appendAssistantTurn(vTurnId, data.last_reply, 'VOICE', data.last_artifact);
           }
 
           // Return automatically to LISTENING if hands-free is enabled!

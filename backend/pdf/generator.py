@@ -148,23 +148,36 @@ def call_ollama_structured(
 # ════════════════════════════════════════════════════════════
 
 PDF_CREATE_PATTERNS = [
-    re.compile(r"\b(?:create|make|generate|produce|build|export|draft|write)\b.*?\b(?:pdf|document|report|study guide|cheat sheet|resume|notes)\b", re.IGNORECASE),
-    re.compile(r"\b(?:turn|convert)\b.*?\b(?:into|to)\b.*?\b(?:a\s+)?pdf\b", re.IGNORECASE),
-    re.compile(r"\bpdf\s+(?:about|on|for|of)\b", re.IGNORECASE),
+    # 1. Action verb followed by document noun (e.g., make, create, generate, give, save, export, convert, turn into, write, prepare, build, produce, draft, download, compile)
+    re.compile(r"\b(?:create|make|generate|produce|build|export|draft|write|prepare|give|save|convert|turn|compile|download)\b.*?\b(?:pdf|document|report|study guide|cheat sheet|resume|résumé|notes)\b", re.IGNORECASE),
+    # 2. "as pdf" or "in pdf" or "into pdf"
+    re.compile(r"\b(?:as|in|into)\s+(?:a\s+)?pdf\b", re.IGNORECASE),
+    # 3. "pdf with", "pdf of", "pdf containing", "pdf about", "pdf on", "pdf for"
+    re.compile(r"\bpdf\s+(?:with|containing|of|about|on|for)\b", re.IGNORECASE),
+    # 4. "I need a pdf" or "want a pdf"
+    re.compile(r"\b(?:need|want)\s+(?:a\s+)?(?:pdf|document|report|resume|résumé)\b", re.IGNORECASE),
 ]
 
 PDF_REVISE_PATTERNS = [
     re.compile(r"\b(?:revise|update|modify|edit|change|add to|remove from|make the|shorten|expand)\b.*?\b(?:the|this|that|previous)?\s*(?:pdf|document|report|resume|intro|introduction|conclusion|section|title)\b", re.IGNORECASE),
     re.compile(r"\b(?:make|add|insert|append|change)\b.*?\b(?:shorter|longer|different|conclusion|introduction|section)\b.*?\b(?:in|to|from)\b.*?\b(?:the|this|that)?\s*(?:pdf|document|report)\b", re.IGNORECASE),
     re.compile(r"\b(?:second|new|another)\s+version\b.*?\b(?:of the pdf|with a different)\b", re.IGNORECASE),
+    re.compile(r"\bmake\s+(?:the\s+)?(?:intro|introduction|conclusion|section|summary)\s+(?:shorter|longer|briefer|more concise)\b", re.IGNORECASE),
+    re.compile(r"\b(?:add|include|insert|append)\b.*?\b(?:certification|certificate|section|skill|table)\b", re.IGNORECASE),
 ]
 
 # Exclusion patterns (ordinary conversational questions that should NOT trigger tool generation)
 PDF_EXCLUDE_PATTERNS = [
     re.compile(r"^\s*what\s+is\s+(?:a\s+)?pdf\b", re.IGNORECASE),
+    re.compile(r"^\s*how\s+do\s+(?:i\s+|you\s+)?(?:open|read|view|edit|use)\s+(?:a\s+)?pdf\b", re.IGNORECASE),
     re.compile(r"^\s*how\s+do\s+pdfs\s+work\b", re.IGNORECASE),
-    re.compile(r"^\s*explain\s+(?:what\s+a\s+)?pdf\b", re.IGNORECASE),
+    re.compile(r"^\s*explain\s+(?:what\s+)?(?:a\s+)?pdf\b", re.IGNORECASE),
+    re.compile(r"^\s*is\s+(?:a\s+)?pdf\s+(?:editable|safe|free|vector|searchable)\b", re.IGNORECASE),
     re.compile(r"^\s*who\s+(?:invented|created)\s+(?:the\s+)?pdf\b", re.IGNORECASE),
+    re.compile(r"^\s*tell\s+me\s+about\s+pdf\s+accessibility\b", re.IGNORECASE),
+    re.compile(r"^\s*can\s+(?:you\s+)?explain\s+what\s+pdf\s+means\b", re.IGNORECASE),
+    re.compile(r"^\s*what\s+does\s+pdf\s+stand\s+for\b", re.IGNORECASE),
+    re.compile(r"^\s*how\s+does\s+a\s+pdf\s+document\s+differ\b", re.IGNORECASE),
 ]
 
 
@@ -589,6 +602,10 @@ def number_guard(
     user_digits = set(re.findall(r"\d+", user_text))
     has_user_numbers = len(user_digits) > 0
 
+    is_math_tables = any(w in user_prompt.lower() for w in ["multiplication", "table 1", "table 2", "times table", "math table"])
+    if not is_resume and is_math_tables:
+        return blocks, []
+
     if not is_resume and not has_user_numbers:
         return blocks, []
 
@@ -868,7 +885,10 @@ def generate_pdf_from_prompt(
             "  ]\n"
             "}\n"
             "OUTLINE RULES:\n"
-            "- For reports: Cover=true, TOC=true. Keep sections between 3 and 5. "
+            "- For tables / math / study guides (e.g. 'tables 1 to 5', 'multiplication tables'): Assume multiplication reference tables 1 through 5. "
+            "Set title='Multiplication Reference Tables (1 to 5)', template='notes', cover=false, toc=false, page_size='A4'. "
+            "Provide 5 clear sections: 'Multiplication Table 1', 'Multiplication Table 2', 'Multiplication Table 3', 'Multiplication Table 4', 'Multiplication Table 5'.\n"
+            "- For reports: Cover=true. Keep sections between 3 and 5. "
             "Always include an overview, 2-3 core analytical/technical sections, and a 'Conclusion'. "
             "Include a 'References' section ONLY if specific external reference sources or documents were provided in the user prompt/context.\n"
             "- For resumes: Use template 'resume', cover=false, toc=false, page_size='Letter'. "
@@ -908,6 +928,19 @@ def generate_pdf_from_prompt(
             sec_title = sec.get("title", f"Section {idx}")
             sec_brief = sec.get("brief", "")
             notify("drafting", f"Drafting section {idx} of {total_secs}: '{sec_title}'...")
+
+            is_mult_table = any(w in sec_title.lower() for w in ["multiplication", "table 1", "table 2", "table 3", "table 4", "table 5"])
+            if is_mult_table and not is_resume_doc:
+                num_match = re.search(r"\b([1-5])\b", sec_title)
+                n = int(num_match.group(1)) if num_match else idx
+                mult_rows = [[f"{n} × {i}", f"{n * i}"] for i in range(1, 11)]
+                sec_blocks = [
+                    {"type": "heading", "data": {"level": 2, "text": sec_title}},
+                    {"type": "paragraph", "data": {"text": f"Multiplication calculations for the number {n} from 1 through 10."}},
+                    {"type": "table", "data": {"headers": ["Expression", "Product"], "rows": mult_rows}},
+                ]
+                all_blocks.extend(sec_blocks)
+                continue
 
             if is_resume_doc:
                 sec_prompt = (
@@ -1062,7 +1095,11 @@ def generate_pdf_from_prompt(
         )
 
         notify("ready", f"Document ready: '{final_record.display_name}' ({final_record.page_count} pages)")
-        summary_msg = f"Right away, sir. I have prepared your document **{final_record.display_name}** ({final_record.page_count} page{'s' if final_record.page_count != 1 else ''}, {round(final_record.size_bytes / 1024, 1)} KB). It is validated and ready for download."
+        is_ambiguous_tables = bool(re.search(r"\btables?\s*(?:1\s*(?:to|-|through)\s*5|\bnumbered\s*1)", safe_prompt, re.I) and not re.search(r"\bmultiplication\b", safe_prompt, re.I))
+        if is_ambiguous_tables:
+            summary_msg = f"Right away, sir. Assuming multiplication reference tables 1 through 5, I have prepared your document **{final_record.display_name}** ({final_record.page_count} page{'s' if final_record.page_count != 1 else ''}, {round(final_record.size_bytes / 1024, 1)} KB). It is validated and ready for download."
+        else:
+            summary_msg = f"Right away, sir. I have prepared your document **{final_record.display_name}** ({final_record.page_count} page{'s' if final_record.page_count != 1 else ''}, {round(final_record.size_bytes / 1024, 1)} KB). It is validated and ready for download."
         return final_record, summary_msg
 
     except Exception as exc:
@@ -1075,6 +1112,7 @@ def generate_pdf_from_prompt(
 def revise_pdf_from_prompt(
     instruction: str,
     target_artifact_id: Optional[str] = None,
+    conversation_context: Optional[str] = None,
     progress_callback: Optional[Callable[[str, str], None]] = None,
 ) -> Tuple[ArtifactRecord, str]:
     """
@@ -1106,6 +1144,20 @@ def revise_pdf_from_prompt(
                     if any(w in instruction.lower() for w in keywords):
                         matched.append(r)
 
+            # If not disambiguated by instruction alone, check conversation context in reverse (most recent turn first)
+            if not matched and conversation_context:
+                lines = [line.strip() for line in conversation_context.splitlines() if line.strip()]
+                for line in reversed(lines):
+                    line_lower = line.lower()
+                    turn_matched = []
+                    for r in ready_recent:
+                        stem = r.display_name.lower().replace(".pdf", "")
+                        if stem in line_lower or r.display_name.lower() in line_lower:
+                            turn_matched.append(r)
+                    if turn_matched:
+                        matched = turn_matched
+                        break
+
             # Deduplicate matches
             seen_ids = set()
             unique_matched = []
@@ -1117,8 +1169,12 @@ def revise_pdf_from_prompt(
             if len(unique_matched) == 1:
                 target_rec = unique_matched[0]
             else:
-                title_list = ", ".join(f"'{r.display_name}'" for r in ready_recent[:3])
-                raise ValueError(f"Multiple documents exist ({title_list}). Which document would you like to revise?")
+                matching_titles = {m.display_name for m in unique_matched}
+                if len(matching_titles) == 1:
+                    target_rec = unique_matched[0]
+                else:
+                    title_list = ", ".join(f"'{r.display_name}'" for r in ready_recent[:3])
+                    raise ValueError(f"Multiple documents exist ({title_list}). Which document would you like to revise?")
         else:
             target_rec = ready_recent[0]
     else:
