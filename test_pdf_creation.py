@@ -43,6 +43,13 @@ from backend.pdf.generator import (
     number_guard,
     normalize_resume_blocks,
     ensure_report_section_openings,
+    has_prior_turn_reference,
+    sanitize_conversation_context,
+    clean_document_title,
+    is_mark_self_topic,
+    get_mark_system_facts,
+    generate_pdf_from_prompt,
+    revise_pdf_from_prompt,
 )
 from backend.pdf.tools import create_pdf, revise_pdf, list_pdfs, get_pdf_info
 import app
@@ -854,6 +861,133 @@ class TestPDFCreation(unittest.TestCase):
         for phrase in negative_phrases:
             intent, params = detect_pdf_intent(phrase)
             self.assertIsNone(intent, f"Expected no intent for question phrase: '{phrase}', got '{intent}'")
+
+    # 27. Sequential Requests On Different Topics Do Not Bleed
+    def test_27_sequential_requests_no_context_bleed(self):
+        """
+        Verify that sequential create requests on different topics (e.g. quantum computing
+        followed by 'create a pdf of your limitations') do not bleed context.
+        """
+        prior_context = (
+            "user: Create a short report on quantum computing fundamentals\n"
+            "assistant: Right away, sir. I have prepared your document **Quantum Computing Fundamentals.pdf** (3 pages, 48.5 KB). "
+            "It covers qubits, superposition, entanglement, quantum gates, NISQ hardware limits, and decoherence. "
+            "It is validated and ready for download.\n"
+            "user: make a pdf with tables 1 to 5\n"
+            "assistant: Right away, sir. I have prepared your document **Multiplication Reference Tables 1 to 5.pdf**.\n"
+        )
+        new_prompt = "create a pdf of your limitations"
+
+        # Verify referential detection is False for standalone request
+        self.assertFalse(has_prior_turn_reference(new_prompt))
+
+        # Title cleanup verification
+        cleaned = clean_document_title("Your Limitations", new_prompt)
+        self.assertEqual(cleaned, "Limitations of Mark's Language Model")
+
+        # Mark self-topic detection
+        self.assertTrue(is_mark_self_topic(new_prompt))
+        facts = get_mark_system_facts()
+        self.assertIn("qwen3.5:4b", facts)
+        self.assertIn("4,096", facts)
+        self.assertIn("6 GB VRAM", facts)
+
+        # Mock Ollama call to observe prompt isolation and verify zero quantum leakage
+        captured_prompts = []
+        def mock_call_ollama(messages, *args, **kwargs):
+            content = messages[-1].get("content", "") if isinstance(messages, list) else str(messages)
+            captured_prompts.append(content)
+            if "OUTLINE" in content or "Architecture Engine" in str(messages):
+                return {
+                    "title": "Limitations of Mark's Language Model",
+                    "subtitle": "Architecture, Context Window, and Hardware Constraints",
+                    "template": "report",
+                    "cover": True,
+                    "toc": False,
+                    "sections": [
+                        {"title": "System Architecture", "brief": "Local model execution"},
+                        {"title": "Context Limits", "brief": "Context window constraint"},
+                        {"title": "Conclusion", "brief": "Operational boundary summary"},
+                    ]
+                }
+            return {
+                "blocks": [
+                    {"type": "heading", "data": {"level": 2, "text": "Section Heading"}},
+                    {"type": "paragraph", "data": {"text": "Mark operates locally with 4,096 tokens context window and 6 GB VRAM."}}
+                ]
+            }
+
+        with patch("backend.pdf.generator.call_ollama_structured", side_effect=mock_call_ollama):
+            rec, summary = generate_pdf_from_prompt(new_prompt, conversation_context=prior_context)
+
+        self.assertEqual(rec.display_name, "Limitations of Marks Language Model.pdf")
+        # Ensure none of the prompts sent to Ollama contain quantum terms or multiplication tables
+        for p in captured_prompts:
+            self.assertNotIn("quantum", p.lower())
+            self.assertNotIn("qubit", p.lower())
+            self.assertNotIn("nisq", p.lower())
+            self.assertNotIn("multiplication", p.lower())
+
+    # 28. Referential Phrases Preserve Previous Turn Dialogue
+    def test_28_referential_phrases_preserve_previous_turn(self):
+        """
+        Verify that requests referencing prior conversation ('put that in a pdf', 'save this as a pdf')
+        retain and pass the sanitized conversation context.
+        """
+        ref_phrases = [
+            "put that in a pdf",
+            "save this as a pdf",
+            "turn that into a pdf",
+            "export our conversation as pdf",
+            "pdf of what we discussed",
+            "create a pdf from above",
+        ]
+        for rp in ref_phrases:
+            self.assertTrue(has_prior_turn_reference(rp), f"Expected referential detection for: '{rp}'")
+
+        chat_history = (
+            "user: Can you summarize the key advantages of Rust?\n"
+            "assistant: Rust provides memory safety without garbage collection, zero-cost abstractions, and fearless concurrency.\n"
+            "assistant: Right away, sir. I have prepared your document **Prior.pdf** (1 page, 10 KB). It is validated and ready for download.\n"
+        )
+        sanitized = sanitize_conversation_context(chat_history)
+        self.assertIn("Can you summarize the key advantages of Rust?", sanitized)
+        self.assertIn("fearless concurrency", sanitized)
+        # Prior document artifact text must be stripped
+        self.assertNotIn("Prior.pdf", sanitized)
+        self.assertNotIn("validated and ready for download", sanitized)
+
+        captured_user_msg = []
+        def mock_call_ollama(messages, *args, **kwargs):
+            content = messages[-1].get("content", "") if isinstance(messages, list) else str(messages)
+            captured_user_msg.append(content)
+            if "OUTLINE" in content or "Architecture Engine" in str(messages):
+                return {
+                    "title": "Rust Advantages Summary",
+                    "subtitle": "Memory Safety and Performance",
+                    "template": "report",
+                    "cover": True,
+                    "toc": False,
+                    "sections": [
+                        {"title": "Overview", "brief": "Rust language benefits"},
+                    ]
+                }
+            return {
+                "blocks": [
+                    {"type": "heading", "data": {"level": 2, "text": "Overview"}},
+                    {"type": "paragraph", "data": {"text": "Rust guarantees memory safety without runtime garbage collection."}}
+                ]
+            }
+
+        with patch("backend.pdf.generator.call_ollama_structured", side_effect=mock_call_ollama):
+            rec, summary = generate_pdf_from_prompt("put that in a pdf", conversation_context=chat_history)
+
+        self.assertEqual(rec.display_name, "Rust Advantages Summary.pdf")
+        # Ensure outline prompt received the conversation reference context
+        outline_prompt = captured_user_msg[0]
+        self.assertIn("fearless concurrency", outline_prompt)
+        self.assertIn("USER REFERENCE CONTEXT", outline_prompt)
+        self.assertNotIn("Prior.pdf", outline_prompt)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,8 @@ from backend.pdf.generator import (
     detect_pdf_intent,
     generate_pdf_from_prompt,
     revise_pdf_from_prompt,
+    has_prior_turn_reference,
+    sanitize_conversation_context,
     GenerationBusyError,
 )
 from backend.pdf.storage import storage, UUID4_PATTERN, sanitize_download_filename
@@ -250,10 +252,12 @@ def voice_chat_handler(message: str, stream_callback=None) -> str:
     if pdf_intent in ("create", "revise"):
         try:
             ctx = ""
-            with _conversation_lock:
-                for item in _conversation_history[-6:]:
-                    if isinstance(item, dict):
-                        ctx += f"{item.get('role', 'user')}: {item.get('content', '')}\n"
+            if has_prior_turn_reference(message):
+                with _conversation_lock:
+                    for item in _conversation_history[-6:]:
+                        if isinstance(item, dict):
+                            ctx += f"{item.get('role', 'user')}: {item.get('content', '')}\n"
+                ctx = sanitize_conversation_context(ctx)
 
             if pdf_intent == "create":
                 record, summary = generate_pdf_from_prompt(
@@ -588,10 +592,12 @@ class MarkHandler(BaseHTTPRequestHandler):
 
                     try:
                         ctx = ""
-                        with _conversation_lock:
-                            for item in _conversation_history[-6:]:
-                                if isinstance(item, dict):
-                                    ctx += f"{item.get('role', 'user')}: {item.get('content', '')}\n"
+                        if has_prior_turn_reference(message):
+                            with _conversation_lock:
+                                for item in _conversation_history[-6:]:
+                                    if isinstance(item, dict):
+                                        ctx += f"{item.get('role', 'user')}: {item.get('content', '')}\n"
+                            ctx = sanitize_conversation_context(ctx)
 
                         if pdf_intent == "create":
                             record, summary = generate_pdf_from_prompt(
@@ -639,10 +645,12 @@ class MarkHandler(BaseHTTPRequestHandler):
                 # Non-streaming PDF path
                 try:
                     ctx = ""
-                    with _conversation_lock:
-                        for item in _conversation_history[-6:]:
-                            if isinstance(item, dict):
-                                ctx += f"{item.get('role', 'user')}: {item.get('content', '')}\n"
+                    if has_prior_turn_reference(message):
+                        with _conversation_lock:
+                            for item in _conversation_history[-6:]:
+                                if isinstance(item, dict):
+                                    ctx += f"{item.get('role', 'user')}: {item.get('content', '')}\n"
+                        ctx = sanitize_conversation_context(ctx)
 
                     if pdf_intent == "create":
                         record, summary = generate_pdf_from_prompt(
